@@ -1,0 +1,25 @@
+
+<form [formGroup]="incomeSourceForm">
+  <mat-list role="list">
+    <mat-list-item role="listitem">
+      <mat-select placeholder="Select" formControlName="income_source">
+        <mat-option *ngFor="let option of incomeSourceOptions" [value]="option.id">{{option.name}}</mat-option>
+      </mat-select>
+    </mat-list-item>
+
+    <mat-list-item role="listitem" *ngIf="incomeSourceForm.get('income_source').value === 6">
+      <mat-form-field>
+        <input matInput placeholder="Input" formControlName="income_custom">
+      </mat-form-field>
+    </mat-list-item>
+
+    <mat-list-item role="listitem"><button mat-raised-button color="primary">Save</button></mat-list-item>
+  </mat-list>
+</form>
+
+
+<p>Form value: {{ incomeSourceForm.value | json }}</p>
+<p>Form status: {{ incomeSourceForm.status | json }}</p>
+<p>income_source: {{ incomeSourceForm.get('income_source').value }}</p>
+
+<button mat-raised-button color="primary" (click)="setValue()">Set value</button>

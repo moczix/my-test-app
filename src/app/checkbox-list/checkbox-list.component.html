@@ -1,0 +1,5 @@
+<ul [formGroup]="checkboxForm">
+  <li *ngFor="let checkbox of checkboxForm.get('leagues').controls; let i = index">
+    <mat-checkbox [formControl]="checkbox" (change)="testChange($event.checked, i)">Check me!</mat-checkbox>
+  </li>
+</ul>
