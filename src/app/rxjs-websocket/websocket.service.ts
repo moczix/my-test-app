@@ -127,8 +127,7 @@ class WebSocketDataManager {
 
 @Injectable()
 export class WebSocketService {
-
-  // private WEBSOCKET_URL: string = `${environment.gatewaysUrl.sportsBookWs}?language=${process.env.config.locale}`;
+  
   // private WEBSOCKET_URL = 'wss://bp-testing-lvbet-pl.testowaplatforma123.net/_v3/ws/update/?language=pl';
   private WEBSOCKET_URL = 'ws://localhost:8080';
   private RECONNECTION_TIMEOUT = 3000;
