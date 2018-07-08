@@ -1,9 +1,8 @@
-import {BehaviorSubject, interval, merge, Subject} from 'rxjs';
+import {BehaviorSubject, forkJoin, interval, of, Subject} from 'rxjs';
 import {Injectable} from '@angular/core';
 import {WebSocketSubject} from 'rxjs/internal/observable/dom/WebSocketSubject';
 import {VisibilityService} from './visibility.service';
-import {delay, filter, startWith, take, takeUntil} from 'rxjs/internal/operators';
-
+import {delay, filter, mergeMap, startWith, take, takeUntil} from 'rxjs/internal/operators';
 
 interface WebSocketChannelSubscription {
   action: string;
@@ -30,7 +29,7 @@ enum WebSocketChannelActions {
   pong = 'pong'
 }
 
-class WebSocketChannelManager<T> {
+class WebSocketChannelManager {
 
   private FILTERS = [
     { channel: 'sportsGroups', value: '_parent' },
@@ -39,10 +38,10 @@ class WebSocketChannelManager<T> {
     { channel: 'user', value: 'session_id' },
   ];
 
-  private socket$: WebSocketSubject<T>;
+  private socket$: WebSocketSubject<any>;
   private channelClients: WebSocketChannelClients[] = [];
 
-  public setSocketInstance(socket: WebSocketSubject): void {
+  public setSocketInstance(socket: WebSocketSubject<any>): void {
     this.socket$ = socket;
   }
 
@@ -131,20 +130,16 @@ export class WebSocketService {
 
   // private WEBSOCKET_URL: string = `${environment.gatewaysUrl.sportsBookWs}?language=${process.env.config.locale}`;
   private WEBSOCKET_URL = 'wss://bp-testing-lvbet-pl.testowaplatforma123.net/_v3/ws/update/?language=pl';
-  private RECONNECTION_TIMEOUT = 2000;
+  private RECONNECTION_TIMEOUT = 3000;
   private socket$: WebSocketSubject<any>;
-  private onConnectedSubject$: Subject<Event> = new Subject<Event>();
-  private onCloseSubject$: Subject<CloseEvent> = new Subject<CloseEvent>();
-  private connectionEstablishedSubject$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
 
-  private normalConnectedStatus: boolean = false;
-  private abnormalClosedStatus = false;
-  private isAppActive = true;
+  private onCloseSubject$: Subject<CloseEvent> = new Subject<CloseEvent>();
+  private onConnectionEstablishedSubject$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
 
   private channelManager: WebSocketChannelManager;
+
   public dataManager: WebSocketDataManager;
 
-  private subscribedChannels: Array<{ channel: string, parent: string }> = [];
 
   constructor(private visibilityService: VisibilityService) {
     this.channelManager = new WebSocketChannelManager();
@@ -152,78 +147,92 @@ export class WebSocketService {
     this.initialize();
   }
 
+  public crash() {
+    this.socket$.next(JSON.stringify({action: 'ping'}));
+  }
+
   private initialize() {
     this.manageConnectionListeners();
     this.keepConnectionAlive();
     this.initializePing();
-    merge(this.visibilityService.activityChange, this.visibilityService.visibilityChange)
+
+
+    this.visibilityService.isAppActive()
       .pipe(
-        startWith(true)
+        mergeMap(isActive => forkJoin([
+          of(isActive), this.onConnectionEstablishedSubject$.pipe(take(1))
+        ]))
       )
-      .subscribe(isActive => {
-        this.isAppActive = isActive;
-        isActive && !this.normalConnectedStatus ? this.connect() : this.disconnect();
+      .subscribe(([isActive, isConnectionEstablished]) => {
+        isActive && !isConnectionEstablished ? this.connect() : this.disconnect();
       });
   }
 
   private manageConnectionListeners(): void {
-    this.onConnectedSubject$.subscribe(() => {
-      console.log('polaczone!');
-      this.abnormalClosedStatus = false;
-    });
-    this.onCloseSubject$.subscribe(event => this.abnormalClosedStatus = !event.wasClean);
-    this.connectionEstablishedSubject$.pipe(filter(status => !!status)).subscribe(() => this.channelManager.connectAgainAllClientsToTheirChannels())
+    this.onCloseSubject$.subscribe(() => this.onConnectionEstablishedSubject$.next(false));
+    this.onConnectionEstablishedSubject$
+      .pipe(
+        filter(status => !!status)
+      )
+      .subscribe(() => this.channelManager.connectAgainAllClientsToTheirChannels());
+
+    this.onConnectionEstablishedSubject$.pipe(filter(status => !!status)).subscribe(() => {
+      console.log('POLACZONE');
+    })
+    this.onCloseSubject$.subscribe(() => {
+      console.log("ROZLACZONE")
+    })
   }
 
-
   private connect(): void {
-    this.connectionEstablishedSubject$.next(false);
-    this.normalConnectedStatus = true;
     this.socket$ = new WebSocketSubject({
       url: this.WEBSOCKET_URL,
-      openObserver: this.onConnectedSubject$,
       closeObserver: this.onCloseSubject$
+    });
+
+    this.socket$.pipe(take(1)).subscribe(() => {
+      this.channelManager.setSocketInstance(this.socket$);
+      this.onConnectionEstablishedSubject$.next(true);
     });
     this.socket$.subscribe(
       data => {
-        if (data.action === WebSocketChannelActions.pong) {
-          if (!this.connectionEstablishedSubject$.getValue()) {
-            this.channelManager.setSocketInstance(this.socket$);
-            this.connectionEstablishedSubject$.next(true);
-          }
-        }
-        this.dataManager.handleData(data);
+        //this.dataManager.handleData(data);
+        console.log("mamy dane");
       },
       err => { }
     );
   }
 
   private disconnect(): void {
-    this.normalConnectedStatus = false;
     this.socket$.unsubscribe();
   }
 
   public subscribeToChannel(channel: string, parent: any = 1): void {
-    console.log('chcielibysmy dolaczyc ');
-    this.connectionEstablishedSubject$
+    this.onConnectionEstablishedSubject$
       .pipe(
         filter(status => !!status),
         take(1)
       )
       .subscribe(() => {
-        console.log('ale dopiero teraz to robimy');
         this.channelManager.connectToChannel(channel, parent);
-      })
+      });
   }
 
   public unsubscribeFromChannel(channel: string, parent: any): void {
-    this.channelManager.disconnectFromChannel(channel, parent);
+    this.onConnectionEstablishedSubject$
+      .pipe(
+        filter(status => !!status),
+        take(1)
+      )
+      .subscribe(() => {
+        this.channelManager.disconnectFromChannel(channel, parent);
+      });
   }
 
 
   // ping server, when server is crashed or somewhat we got close event from socket
   private initializePing(): void {
-    this.onConnectedSubject$.subscribe(() => {
+    this.onConnectionEstablishedSubject$.pipe(filter(status => !!status)).subscribe(() => {
       interval(5000)
         .pipe(
           startWith(0),
@@ -235,16 +244,20 @@ export class WebSocketService {
   private keepConnectionAlive(): void {
     this.onCloseSubject$
       .pipe(
-        filter(event => !event.wasClean), // dont run if wasClean true
-        delay(this.RECONNECTION_TIMEOUT),
+        mergeMap(() => of({}).pipe(delay(this.RECONNECTION_TIMEOUT + (Math.floor(Math.random()) * 500)))),
+        mergeMap(() => {
+          return forkJoin([
+            this.visibilityService.isAppActive().pipe(take(1)),
+            this.onConnectionEstablishedSubject$.pipe(take(1)),
+          ]);
+        })
       )
-      .subscribe(() => {
-        // connect only when closed was unclean state and appIs active tab
-        if (this.abnormalClosedStatus && this.isAppActive) {
-          console.log('try connect again');
+      .subscribe(([isAppActive, isConnectionEstablished]) => {
+        if (!isConnectionEstablished && isAppActive) {
+          console.log('try reconnect');
           this.connect();
         }
-    });
+      });
   }
 
 }

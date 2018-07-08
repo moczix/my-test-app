@@ -15,6 +15,7 @@ export class RxjsWebsocketComponent implements OnInit {
   }
 
   crash() {
+    this.websocketService.crash();
   }
 
 

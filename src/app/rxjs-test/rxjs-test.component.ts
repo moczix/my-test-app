@@ -1,6 +1,6 @@
 import {Component, OnInit} from '@angular/core';
-import {of, race, Subject, timer} from 'rxjs';
-import {concatMap, delay, map, repeat, take} from 'rxjs/internal/operators';
+import {BehaviorSubject, forkJoin, of, Subject} from 'rxjs';
+import {delay, mergeMap, take} from 'rxjs/internal/operators';
 
 @Component({
   selector: 'app-rxjs-test',
@@ -9,45 +9,38 @@ import {concatMap, delay, map, repeat, take} from 'rxjs/internal/operators';
 })
 export class RxjsTestComponent implements OnInit {
 
-  subjectOne = new Subject<string>();
-  subjectTwo = new Subject<string>();
+  subjectOne = new BehaviorSubject<string>("init jeden");
+  subjectTwo = new BehaviorSubject<string>("init dwa");
+
+  subjectThree = new Subject<string>();
 
   constructor() {
 
-    timer(0, 5000)
+
+
+
+  }
+
+
+  ngOnInit() {
+    this.subjectThree
       .pipe(
-        map(i => 'ping'),
-        concatMap(val => {
-          return race(
-            of('timeout').pipe(delay(3000)),
-            this.sendMockPing()
+        mergeMap(() => of({}).pipe(delay(3000))),
+        //mergeMap(() => this.subjectOne.pipe(take(1))),
+        mergeMap(res => {
+          return forkJoin(
+            [
+              this.subjectOne.asObservable().pipe(take(1)), this.subjectTwo.asObservable().pipe(take(1))
+            ]
           );
         })
       )
-    .subscribe(val => {
-      console.log(val);
-    });
+      .subscribe((res) => {
+      console.log("mamy trzy", res);
+    })
 
 
-  }
 
-  sendMockPing() {
-    // random 0 - 5s delay
-    return of('pong').pipe(
-      delay(Math.random() * 10000 / 2)
-    )
-  }
-
-  ngOnInit() {
-    race(this.subjectOne, this.subjectTwo)
-      .pipe(
-        take(1),
-        repeat()
-      )
-
-      .subscribe(res => {
-        console.log(res);
-      })
   }
 
   one(): void {
@@ -56,6 +49,10 @@ export class RxjsTestComponent implements OnInit {
 
   two(): void {
     this.subjectTwo.next("daaaa");
+  }
+
+  three(): void {
+    this.subjectThree.next("Three");
   }
 
 }
